@@ -154,9 +154,6 @@ public:
                 subLaserCloud = nh.subscribe<livox_ros_driver::CustomMsg>(
                     pointCloudTopic, 5, &ImageProjection::aviaCloudHandler, this,
                     ros::TransportHints().tcpNoDelay());
-                subLaserPointCloud = nh.subscribe<sensor_msgs::PointCloud2>(
-                        pointCloudTopic, 5, &ImageProjection::aviaCloudHandler, this,
-                        ros::TransportHints().tcpNoDelay());
                 break;
             default:
                 printf("Lidar type is wrong.\n");

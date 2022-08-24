@@ -50,19 +50,19 @@ private:
 public:
     Preprocessing(): nh("~") {
 
-        if (!getParameter("/preprocessing/surf_thres", surf_thres))
+        if (!getParameter("/edge_tracker/surf_thres", surf_thres))
         {
             ROS_WARN("surf_thres not set, use default value: 0.2");
             surf_thres = 0.28;
         }
 
-        if (!getParameter("/preprocessing/edge_thres", edge_thres))
+        if (!getParameter("/edge_tracker/edge_thres", edge_thres))
         {
             ROS_WARN("edge_thres not set, use default value: 4.0");
             edge_thres = 4.0;
         }
 
-        if (!getParameter("/common/frame_id", frame_id))
+        if (!getParameter("/edge_tracker/frame_id", frame_id))
         {
             ROS_WARN("frame_id not set, use default value: lili_om");
             frame_id = "lili_om";

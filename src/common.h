@@ -12,6 +12,7 @@
 #include <message_filters/subscriber.h>
 #include <geometry_msgs/Vector3Stamped.h>
 #include <geometry_msgs/QuaternionStamped.h>
+#include <control_msgs/JointControllerState.h>
 #include <sensor_msgs/NavSatFix.h>
 
 #include <tf/transform_listener.h>

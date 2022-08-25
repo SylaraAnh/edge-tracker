@@ -56,6 +56,9 @@ edge_tracker:
   #preprocessing
   surf_thres: 0.28
   edge_thres: 4.0
+  edge_curthres: 0.01
+  angle_min: -1.78
+  angle_max: 1.78
   frame_id: "imu_link"
 
 #  # Surrounding map

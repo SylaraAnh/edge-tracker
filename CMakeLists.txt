@@ -22,6 +22,7 @@ find_package(catkin REQUIRED COMPONENTS
     std_msgs
     sensor_msgs
     geometry_msgs
+    control_msgs
     nav_msgs
     # cv
     cv_bridge
@@ -51,6 +52,7 @@ add_message_files(
 generate_messages(
   DEPENDENCIES
   geometry_msgs
+  control_msgs
   std_msgs
   nav_msgs
   sensor_msgs
@@ -60,7 +62,7 @@ generate_messages(
 ### Catkin
 ######################
 catkin_package(
-    CATKIN_DEPENDS roscpp rospy message_runtime std_msgs nav_msgs geometry_msgs
+    CATKIN_DEPENDS roscpp rospy message_runtime std_msgs nav_msgs geometry_msgs control_msgs
     DEPENDS PCL EIGEN3
 )
 

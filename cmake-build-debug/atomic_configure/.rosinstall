@@ -1,0 +1,2 @@
+- setup-file:
+    local-name: /home/wjc/code/ws_edge_tracker/src/edge-tracker/cmake-build-debug/devel/setup.sh

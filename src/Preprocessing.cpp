@@ -11,6 +11,7 @@ private:
     ros::Subscriber sub_Lidar_cloud;
     ros::Subscriber sub_imu;
     ros::Subscriber sub_cmd_vel;
+    ros::Subscriber sub_yaw_statues;
 
     ros::Publisher pub_view;
     ros::Publisher pub_surf;
@@ -28,6 +29,7 @@ private:
     vector<sensor_msgs::ImuConstPtr> imu_buf;
     vector<geometry_msgs::TwistConstPtr> cmd_vel_buf;
     double cmd_angular = 0;
+    double fb_angular = 0;
     int idx_imu = 0;
     double current_time_imu = -1;
 
@@ -45,6 +47,8 @@ private:
     string frame_id = "lili_om";
     string imu_frame_id = "imu_link";
     double edge_thres, surf_thres;
+    double edge_curthres;
+    double angle_max, angle_min;
     double runtime = 0;
 
 public:
@@ -61,6 +65,22 @@ public:
             ROS_WARN("edge_thres not set, use default value: 4.0");
             edge_thres = 4.0;
         }
+        if (!getParameter("/edge_tracker/edge_curthres", edge_curthres))
+        {
+            ROS_WARN("edge_curthres not set, use default value: 0.02");
+            edge_curthres = 0.02;
+        }
+        if (!getParameter("/edge_tracker/angle_min", angle_min))
+        {
+            ROS_WARN("angle_min not set, use default value: -0.78");
+            angle_min = -0.78;
+        }
+
+        if (!getParameter("/edge_tracker/angle_max", angle_max))
+        {
+            ROS_WARN("angle_max not set, use default value: 0.78");
+            angle_max = 0.78;
+        }
 
         if (!getParameter("/edge_tracker/frame_id", frame_id))
         {
@@ -72,6 +92,7 @@ public:
                                                             &Preprocessing::cloudHandler, this,
                                                             ros::TransportHints().tcpNoDelay());
         sub_cmd_vel = nh.subscribe<geometry_msgs::Twist>("/cmd_vel", 20000, &Preprocessing::velHandler, this);
+        sub_yaw_statues = nh.subscribe<control_msgs::JointControllerState>("/gimbal_lidar/yaw_joint_position_controller/state", 20000, &Preprocessing::control_msgsHandler, this);
 
         pub_view = nh.advertise<std_msgs::Float64>("/gimbal_lidar/yaw_joint_position_controller/command", 100);
         pub_surf = nh.advertise<sensor_msgs::PointCloud2>("/edge_tracker/lidar/feature/cloud_surface", 100);
@@ -145,6 +166,10 @@ public:
 
     void velHandler(const geometry_msgs::TwistConstPtr& cmd_vel_in) {
         cmd_angular = cmd_vel_in->angular.z;
+    }
+
+    void control_msgsHandler(const control_msgs::JointControllerStateConstPtr& control_msgs_in) {
+        fb_angular = control_msgs_in->process_value;
     }
 
     void imuHandler(const sensor_msgs::ImuConstPtr& imu_in) {
@@ -271,14 +296,9 @@ public:
                                                  mat[k][i+j+1], mat[k][i+j+2], mat[k][i+j+3], mat[k][i+j+4]);
                     g1 = g1 / (8 * getDepth(mat[k][i+j]) + 1e-3);
 
-                    if(g1 > 0.015) {
+                    if(g1 > edge_curthres) {
                         if(g1 > max_s) {
                             max_s = g1;
-                            idx = i+j;
-                        }
-                    } else if(g1 < -0.01) {
-                        if(g1 < max_s1) {
-                            max_s1 = g1;
                             idx = i+j;
                         }
                     }
@@ -309,7 +329,7 @@ public:
 
             Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eigen_solver_edge(matA_edge);
 
-            if(eigen_solver_edge.eigenvalues()[2] > edge_thres * eigen_solver_edge.eigenvalues()[1] && idsx_edge.size() > 3) {
+            if(eigen_solver_edge.eigenvalues()[2] > edge_thres * eigen_solver_edge.eigenvalues()[1] && idsx_edge.size() > 4) {
                 Eigen::Vector3d unitDirection = eigen_solver_edge.eigenvectors().col(2);
                 for(int j = 0; j < idsx_edge.size(); j++) {
                     if(mat[idsx_edge[j]][idsy_edge[j]].intensity <= 0 && mat[idsx_edge[j]][idsy_edge[j]].curvature <= 0)
@@ -345,44 +365,68 @@ public:
             }
         }
 
-        num_left += 20 * (4 - abs(2 - last_cmd));
-        num_medleft += 20 * (4 - abs(1 - last_cmd));
-        num_med += 20 * (4 - abs(0 - last_cmd));
-        num_medright += 20 * (4 - abs(1 + last_cmd));
-        num_right += 20 * (4 - abs(2 + last_cmd));
+//        num_left += 20 * (4 - abs(2 - last_cmd));
+//        num_medleft += 20 * (4 - abs(1 - last_cmd));
+//        num_med += 20 * (4 - abs(0 - last_cmd));
+//        num_medright += 20 * (4 - abs(1 + last_cmd));
+//        num_right += 20 * (4 - abs(2 + last_cmd));
         ROS_INFO("left: %d, medleft: %d, med: %d, medright: %d, right: %d ", num_left, num_medleft, num_med, num_medright, num_right);
 
-        if (abs(0.52 + last_view_cmd) > 2) num_left = -1;
-        if (abs(0.17 + last_view_cmd) > 2) num_medleft = -1;
-        if (abs(-0.17 + last_view_cmd) > 2) num_medright = -1;
-        if (abs(-0.52 + last_view_cmd) > 2) num_right = -1;
-        num_max = num_left;
-        curr_cmd = 2;
-        view_cmd = 0.52;
-        if (num_max < num_medleft) {
+        if (abs(0.52 + fb_angular) > angle_max) num_left = -1;
+        if (abs(0.17 + fb_angular) > angle_max) num_medleft = -1;
+        if (abs(-0.17 + fb_angular) > angle_max) num_medright = -1;
+        if (abs(-0.52 + fb_angular) > angle_max) num_right = -1;
+        num_max = num_med;
+        curr_cmd = 0;
+        view_cmd = 0.0;
+        if (20 < (num_left - num_right) * 2 + (num_medleft - num_medright)) {
             num_max = num_medleft;
             curr_cmd = 1;
             view_cmd = 0.17;
         }
-        if (num_max < num_med) {
-            num_max = num_med;
-            curr_cmd = 0;
-            view_cmd = 0.0;
+        if (30 < (num_left - num_right) * 2 + (num_medleft - num_medright)) {
+            num_max = num_medleft;
+            curr_cmd = 2;
+            view_cmd = 0.52;
         }
-        if (num_max < num_medright) {
-            num_max = num_medright;
+        if (-20 > (num_left - num_right) * 2 + (num_medleft - num_medright)) {
+            num_max = num_medleft;
             curr_cmd = -1;
             view_cmd = -0.17;
         }
-        if (num_max < num_right) {
-            num_max = num_right;
+        if (-30 > (num_left - num_right) * 2 + (num_medleft - num_medright)) {
+            num_max = num_medleft;
             curr_cmd = -2;
             view_cmd = -0.52;
         }
 
+//        num_max = num_left;
+//        curr_cmd = 2;
+//        view_cmd = 0.52;
+//        if (num_max < num_medleft) {
+//            num_max = num_medleft;
+//            curr_cmd = 1;
+//            view_cmd = 0.17;
+//        }
+//        if (num_max < num_med) {
+//            num_max = num_med;
+//            curr_cmd = 0;
+//            view_cmd = 0.0;
+//        }
+//        if (num_max < num_medright) {
+//            num_max = num_medright;
+//            curr_cmd = -1;
+//            view_cmd = -0.17;
+//        }
+//        if (num_max < num_right) {
+//            num_max = num_right;
+//            curr_cmd = -2;
+//            view_cmd = -0.52;
+//        }
+
         std_msgs::Float64 yaw_angle;
-        yaw_angle.data = std::max(-2.0, last_view_cmd + (view_cmd - cmd_angular * (ros::Time::now().toSec() - time_msgsin)) * 0.2);
-        yaw_angle.data = std::min(2.0, yaw_angle.data);
+        yaw_angle.data = std::max(angle_min, 0.98 * fb_angular + (view_cmd) * 0.3 - cmd_angular * (0.1));
+        yaw_angle.data = std::min(angle_max, yaw_angle.data);
         pub_view.publish(yaw_angle);
         last_view_cmd = yaw_angle.data;
         last_cmd = curr_cmd;

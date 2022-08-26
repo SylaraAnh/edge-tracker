@@ -212,7 +212,8 @@ public:
         double view_left = 0.57;
         double view_med = 0.17;
         double view_right = -0.57;
-        double time_msgsin = current_cloud_msg.header.stamp.toSec();
+        double time_msgsin = ros::Time::now().toSec();
+        double time_msgsout = ros::Time::now().toSec();
 
         Timer t_pre("Preprocessing");
 //        pcl::fromROSMsg(current_cloud_msg.cloud_deskewed, lidar_cloud_in);
@@ -258,8 +259,6 @@ public:
         }
 
         for(int i = 5; i < H_SCANS - 12; i = i + 6) {
-            vector<Eigen::Vector3d> near_pts;
-            Eigen::Vector3d center(0, 0, 0);
             int num = 36;
             for(int j = 0; j < 6; j++) {
                 for(int k = 0; k < N_SCANS; k++) {
@@ -267,17 +266,20 @@ public:
                         num--;
                         continue;
                     }
+                    if (mat[k][i+j].x < 2)
+                    {
+                        mat[k][i+j].intensity = -1;
+                        num--;
+                        continue;
+                    }
                     Eigen::Vector3d pt(mat[k][i+j].x,
                             mat[k][i+j].y,
                             mat[k][i+j].z);
-                    center += pt;
-                    near_pts.push_back(pt);
                 }
             }
             if(num < 25)
                 continue;
-            center /= num;
-            // Covariance matrix
+            //
             vector<int> idsx_edge;
             vector<int> idsy_edge;
             for(int k = 0; k < N_SCANS; k++) {
@@ -330,47 +332,99 @@ public:
             Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eigen_solver_edge(matA_edge);
 
             if(eigen_solver_edge.eigenvalues()[2] > edge_thres * eigen_solver_edge.eigenvalues()[1] && idsx_edge.size() > 4) {
-                Eigen::Vector3d unitDirection = eigen_solver_edge.eigenvectors().col(2);
-                for(int j = 0; j < idsx_edge.size(); j++) {
-                    if(mat[idsx_edge[j]][idsy_edge[j]].intensity <= 0 && mat[idsx_edge[j]][idsy_edge[j]].curvature <= 0)
-                        continue;
-                    mat[idsx_edge[j]][idsy_edge[j]].normal_x = unitDirection.x();
-                    mat[idsx_edge[j]][idsy_edge[j]].normal_y = unitDirection.y();
-                    mat[idsx_edge[j]][idsy_edge[j]].normal_z = unitDirection.z();
+                Eigen::Matrix3d matA1 = Eigen::Matrix3d::Zero();
+                Eigen::Matrix3d matA2 = Eigen::Matrix3d::Zero();
+                vector<Eigen::Vector3d> near_pts1;
+                vector<Eigen::Vector3d> near_pts2;
+                Eigen::Vector3d center1(0, 0, 0);
+                Eigen::Vector3d center2(0, 0, 0);
+                for(int k = 0; k < idsx_edge.size(); k++) {
+                    for(int j = 0; j < 6; j++) {
+                        if(mat[idsx_edge[k]][idsy_edge[k]].intensity <= 0) {
+                            continue;
+                        }
+                        if (i + j < idsy_edge[k])
+                        {
+                            Eigen::Vector3d pt(mat[k][i+j].x, mat[k][i+j].y, mat[k][i+j].z);
+                            center1 += pt;
+                            near_pts1.push_back(pt);
 
-                    edge_features->points.push_back(mat[idsx_edge[j]][idsy_edge[j]]);
-                    mat[idsx_edge[j]][idsy_edge[j]].intensity *= -1;
+                        }
+                        else if (i + j > idsy_edge[k])
+                        {
+                            Eigen::Vector3d pt(mat[k][i+j].x, mat[k][i+j].y, mat[k][i+j].z);
+                            center2 += pt;
+                            near_pts2.push_back(pt);
+                        }
+
+                    }
                 }
-                double tan_theta = center_edge[1] / center_edge[0];
-                if (tan_theta > view_left)
+                center1 /= near_pts1.size();
+                center2 /= near_pts2.size();
+                for (int j = 0; j < near_pts1.size(); j++)
                 {
-                    num_left += idsx_edge.size();
+                    Eigen::Vector3d zero_mean = near_pts1[j] - center1;
+                    matA1 += (zero_mean * zero_mean.transpose());
                 }
-                else if (tan_theta > view_med)
+                for (int j = 0; j < near_pts2.size(); j++)
                 {
-                    num_medleft += idsx_edge.size();
+                    Eigen::Vector3d zero_mean = near_pts2[j] - center2;
+                    matA2 += (zero_mean * zero_mean.transpose());
                 }
-                else if (tan_theta > -view_med)
-                {
-                    num_med += idsx_edge.size();
+
+                Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eigen_solver1(matA1);
+                Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eigen_solver2(matA2);
+
+                if(eigen_solver1.eigenvalues()[0] < surf_thres * eigen_solver1.eigenvalues()[1] &&
+                        eigen_solver2.eigenvalues()[0] < surf_thres * eigen_solver2.eigenvalues()[1]) {
+                    Eigen::Vector3d unitDirection1 = eigen_solver1.eigenvectors().col(0);
+                    Eigen::Vector3d unitDirection2 = eigen_solver2.eigenvectors().col(0);
+                    if((unitDirection1.cross(unitDirection2)).norm() >= 0.2 || (center1 - center2).dot(unitDirection1) > 0.2) // || (center1 - center2).dot(unitDirection1) > 0.2
+                    {
+                        Eigen::Vector3d unitDirection = eigen_solver_edge.eigenvectors().col(2);
+                        for(int j = 0; j < idsx_edge.size(); j++) {
+                            if(mat[idsx_edge[j]][idsy_edge[j]].intensity <= 0 && mat[idsx_edge[j]][idsy_edge[j]].curvature <= 0)
+                                continue;
+                            mat[idsx_edge[j]][idsy_edge[j]].normal_x = unitDirection.x();
+                            mat[idsx_edge[j]][idsy_edge[j]].normal_y = unitDirection.y();
+                            mat[idsx_edge[j]][idsy_edge[j]].normal_z = unitDirection.z();
+
+                            edge_features->points.push_back(mat[idsx_edge[j]][idsy_edge[j]]);
+                            mat[idsx_edge[j]][idsy_edge[j]].intensity *= -1;
+                        }
+                        double tan_theta = center_edge[1] / center_edge[0];
+                        if (tan_theta > view_left)
+                        {
+                            num_left += idsx_edge.size();
+                        }
+                        else if (tan_theta > view_med)
+                        {
+                            num_medleft += idsx_edge.size();
+                        }
+                        else if (tan_theta > -view_med)
+                        {
+                            num_med += idsx_edge.size();
+                        }
+                        else if (tan_theta > view_right)
+                        {
+                            num_medright += idsx_edge.size();
+                        }
+                        else
+                        {
+                            num_right += idsx_edge.size();
+                        }
+                    }
                 }
-                else if (tan_theta > view_right)
-                {
-                    num_medright += idsx_edge.size();
-                }
-                else
-                {
-                    num_right += idsx_edge.size();
-                }
+
             }
         }
-
+        time_msgsout = ros::Time::now().toSec();
 //        num_left += 20 * (4 - abs(2 - last_cmd));
 //        num_medleft += 20 * (4 - abs(1 - last_cmd));
 //        num_med += 20 * (4 - abs(0 - last_cmd));
 //        num_medright += 20 * (4 - abs(1 + last_cmd));
 //        num_right += 20 * (4 - abs(2 + last_cmd));
-        ROS_INFO("left: %d, medleft: %d, med: %d, medright: %d, right: %d ", num_left, num_medleft, num_med, num_medright, num_right);
+        ROS_INFO("time: %.8f, left: %d, medleft: %d, med: %d, medright: %d, right: %d ", time_msgsout - time_msgsin, num_left, num_medleft, num_med, num_medright, num_right);
 
         if (abs(0.52 + fb_angular) > angle_max) num_left = -1;
         if (abs(0.17 + fb_angular) > angle_max) num_medleft = -1;

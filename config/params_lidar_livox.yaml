@@ -54,7 +54,7 @@ edge_tracker:
   mappingProcessInterval: 0.15 # seconds, regulate mapping frequency
 
   #preprocessing
-  surf_thres: 0.28
+  surf_thres: 0.15
   edge_thres: 4.0
   edge_curthres: 0.01
   angle_min: -1.78

@@ -402,7 +402,7 @@ public:
             if ((currentCloudMsg.points[i].line < N_SCAN) &&
                 (!IS_VALID(currentCloudMsg.points[i].x)) &&
                 (!IS_VALID(currentCloudMsg.points[i].y)) &&
-                (!IS_VALID(currentCloudMsg.points[i].z)) && currentCloudMsg.points[i].x > 0.7)
+                (!IS_VALID(currentCloudMsg.points[i].z)) && currentCloudMsg.points[i].x > 2)
             {
                 // https://github.com/Livox-SDK/Livox-SDK/wiki/Livox-SDK-Communication-Protocol
                 // See [3.4 Tag Information]

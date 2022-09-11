@@ -55,8 +55,8 @@ edge_tracker:
 
   #preprocessing
   surf_thres: 0.15
-  edge_thres: 4.0
-  edge_curthres: 0.01
+  edge_thres: 10.0
+  edge_curthres: 0.005
   angle_min: -1.78
   angle_max: 1.78
   frame_id: "imu_link"

@@ -21,6 +21,7 @@ private:
     double last_view_cmd = 0.0;
     int last_cmd = 0;
     int pre_num = 0;
+    int firstflag = 1;
 
     pcl::PointCloud<PointXYZINormal> lidar_cloud_in;
 //    pcl::PointCloud<PointXYZINormal> lidar_cloud_in;
@@ -152,9 +153,12 @@ public:
         checkIntensity(pt, pt6);
         checkIntensity(pt, pt7);
         checkIntensity(pt, pt8);
-        x = pt1.x + pt2.x + pt3.x + pt4.x + pt5.x + pt6.x + pt7.x + pt8.x - 8 * pt.x;
-        y = pt1.y + pt2.y + pt3.y + pt4.y + pt5.y + pt6.y + pt7.y + pt8.y - 8 * pt.y;
-        z = pt1.z + pt2.z + pt3.z + pt4.z + pt5.z + pt6.z + pt7.z + pt8.z - 8 * pt.z;
+        x = pt1.x + 2*pt2.x + 3*pt3.x + 4*pt4.x + 4*pt5.x + 3*pt6.x + 2*pt7.x + pt8.x - 20 * pt.x;
+        y = pt1.y + 2*pt2.y + 3*pt3.y + 4*pt4.y + 4*pt5.y + 3*pt6.y + 2*pt7.y + pt8.y - 20 * pt.y;
+        z = pt1.z + 2*pt2.z + 3*pt3.z + 4*pt4.z + 4*pt5.z + 3*pt6.z + 2*pt7.z + pt8.z - 20 * pt.z;
+//        x = pt1.x + 2*pt2.x + 3*pt3.x + 4*pt4.x + 4*pt5.x + 3*pt6.x + 2*pt7.x + pt8.x - 20 * pt.x;
+//        y = pt1.y + 2*pt2.y + 3*pt3.y + 4*pt4.y + 4*pt5.y + 3*pt6.y + 2*pt7.y + pt8.y - 20 * pt.y;
+//        z = pt1.z + 2*pt2.z + 3*pt3.z + 4*pt4.z + 4*pt5.z + 3*pt6.z + 2*pt7.z + pt8.z - 20 * pt.z;
         return sqrt(x*x + y*y + z*z);
     }
 
@@ -199,12 +203,11 @@ public:
 
         cloud_header = current_cloud_msg.header;
         cloud_header.frame_id = current_cloud_msg.header.frame_id;
-
         int tmp_idx = 0;
         int num_left = 0;
         int num_medleft = 0;
         int num_med = 0;
-        int num_medright = 0;
+         int num_medright = 0;
         int num_right = 0;
         int num_max = 0;
         int curr_cmd = 0;
@@ -214,6 +217,14 @@ public:
         double view_right = -0.57;
         double time_msgsin = ros::Time::now().toSec();
         double time_msgsout = ros::Time::now().toSec();
+//        if (firstflag == 1 && cloud_header.stamp.toSec() == 1627807320.900339365)
+//        if (firstflag == 1 && cloud_header.stamp.toSec() == 1627807363.300291061)
+//        {
+//            firstflag = 0;
+//        }
+//        else{
+//            return;
+//        }
 
         Timer t_pre("Preprocessing");
 //        pcl::fromROSMsg(current_cloud_msg.cloud_deskewed, lidar_cloud_in);
@@ -258,8 +269,21 @@ public:
             mat[scan_id][col] = point;
         }
 
+        for(int i = 5; i < H_SCANS - 6; i++)
+        {
+            for (int k = 0; k < N_SCANS; k++) {
+                double g1 = getRelativeDepth(mat[k][i], mat[k][i-4], mat[k][i-3], mat[k][i-2], mat[k][i-1],
+                                             mat[k][i+1], mat[k][i+2], mat[k][i+3], mat[k][i+4]);
+                g1 = g1 / (20 * getDepth(mat[k][i]) + 1e-3);
+                mat[k][i].curvature = g1;
+            }
+        }
+
         for(int i = 5; i < H_SCANS - 12; i = i + 6) {
             int num = 36;
+            vector<PointXYZINormal> surf_temp1;
+            vector<PointXYZINormal> surf_temp2;
+//            surf_features->points.clear(); // debug
             for(int j = 0; j < 6; j++) {
                 for(int k = 0; k < N_SCANS; k++) {
                     if(mat[k][i+j].intensity <= 0) {
@@ -272,16 +296,27 @@ public:
                         num--;
                         continue;
                     }
+                    mat[k][i+j].intensity = k + 1;
                     Eigen::Vector3d pt(mat[k][i+j].x,
                             mat[k][i+j].y,
                             mat[k][i+j].z);
+//                    surf_features->points.push_back(mat[k][i+j]); // debug
                 }
             }
-            if(num < 25)
+            // debug
+//            sensor_msgs::PointCloud2 surf_features_msg;
+//            pcl::toROSMsg(*surf_features, surf_features_msg);
+//            surf_features_msg.header.stamp = cloud_header.stamp;
+//            surf_features_msg.header.frame_id = cloud_header.frame_id;
+//            if (pub_surf.getNumSubscribers() != 0)
+//                pub_surf.publish(surf_features_msg);
+
+            if(num < 20)
                 continue;
             //
             vector<int> idsx_edge;
             vector<int> idsy_edge;
+            int num_edge = 0;
             for(int k = 0; k < N_SCANS; k++) {
                 double max_s = 0;
                 double max_s1 = 0;
@@ -294,9 +329,7 @@ public:
 //                                getDepth(mat[k][i+j-2]) + getDepth(mat[k][i+j-1]) - 8*getDepth(mat[k][i+j]) +
 //                                getDepth(mat[k][i+j+1]) + getDepth(mat[k][i+j+2]) + getDepth(mat[k][i+j+3]) +
 //                                getDepth(mat[k][i+j+4]);
-                    double g1 = getRelativeDepth(mat[k][i+j], mat[k][i+j-4], mat[k][i+j-3], mat[k][i+j-2], mat[k][i+j-1],
-                                                 mat[k][i+j+1], mat[k][i+j+2], mat[k][i+j+3], mat[k][i+j+4]);
-                    g1 = g1 / (8 * getDepth(mat[k][i+j]) + 1e-3);
+                    double g1 = mat[k][i+j].curvature;
 
                     if(g1 > edge_curthres) {
                         if(g1 > max_s) {
@@ -305,12 +338,31 @@ public:
                         }
                     }
                 }
-                if(max_s != 0 || max_s1 != 0) {
+                if(max_s != 0) {
                     idsx_edge.push_back(k);
                     idsy_edge.push_back(idx);
                 }
+                if (idx == i && idx == i+5)
+                {
+                    num_edge++;
+                }
             }
-
+            if (idsx_edge.size() == 0)
+            {
+                for(int k = 0; k < N_SCANS; k++) {
+                    double max_s = 0;
+                    double max_s1 = 0;
+                    int idx = i;
+                    for(int j = 0; j < 6; j++) {
+                        surf_features->points.push_back(mat[k][i+j]);
+                    }
+                }
+            }
+            if (num_edge > idsx_edge.size() / 2)
+            {
+                idsx_edge.clear();
+                continue;
+            }
             vector<Eigen::Vector3d> near_pts_edge;
             Eigen::Vector3d center_edge(0, 0, 0);
             for(int j = 0; j < idsx_edge.size(); j++) {
@@ -330,7 +382,7 @@ public:
             }
 
             Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eigen_solver_edge(matA_edge);
-
+            //确认边特征
             if(eigen_solver_edge.eigenvalues()[2] > edge_thres * eigen_solver_edge.eigenvalues()[1] && idsx_edge.size() > 4) {
                 Eigen::Matrix3d matA1 = Eigen::Matrix3d::Zero();
                 Eigen::Matrix3d matA2 = Eigen::Matrix3d::Zero();
@@ -339,24 +391,30 @@ public:
                 Eigen::Vector3d center1(0, 0, 0);
                 Eigen::Vector3d center2(0, 0, 0);
                 for(int k = 0; k < idsx_edge.size(); k++) {
-                    for(int j = 0; j < 6; j++) {
+                    for(int j = idsy_edge[k] - i - 4; j <= idsy_edge[k] - i + 4; j++) {
                         if(mat[idsx_edge[k]][idsy_edge[k]].intensity <= 0) {
                             continue;
                         }
-                        if (i + j < idsy_edge[k])
+                        if (i + j < idsy_edge[k]) //  && mat[idsx_edge[k]][idsy_edge[k] + 1].curvature > mat[idsx_edge[k]][idsy_edge[k]].curvature
                         {
                             Eigen::Vector3d pt(mat[k][i+j].x, mat[k][i+j].y, mat[k][i+j].z);
                             center1 += pt;
                             near_pts1.push_back(pt);
-
+                            if(j >= 0)
+                            {
+                                surf_temp1.push_back(mat[k][i+j]);
+                            }
                         }
-                        else if (i + j > idsy_edge[k])
+                        else if (i + j > idsy_edge[k]) // && mat[idsx_edge[k]][idsy_edge[k] - 1].curvature > mat[idsx_edge[k]][idsy_edge[k]].curvature
                         {
                             Eigen::Vector3d pt(mat[k][i+j].x, mat[k][i+j].y, mat[k][i+j].z);
                             center2 += pt;
                             near_pts2.push_back(pt);
+                            if(j < 6)
+                            {
+                                surf_temp2.push_back(mat[k][i+j]);
+                            }
                         }
-
                     }
                 }
                 center1 /= near_pts1.size();
@@ -376,12 +434,25 @@ public:
                 Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eigen_solver2(matA2);
 
                 if(eigen_solver1.eigenvalues()[0] < surf_thres * eigen_solver1.eigenvalues()[1] &&
-                        eigen_solver2.eigenvalues()[0] < surf_thres * eigen_solver2.eigenvalues()[1]) {
+                eigen_solver1.eigenvalues()[1] * eigen_solver1.eigenvalues()[1] > surf_thres * eigen_solver1.eigenvalues()[2] * eigen_solver1.eigenvalues()[0] &&
+                eigen_solver2.eigenvalues()[1] * eigen_solver2.eigenvalues()[1] > surf_thres * eigen_solver2.eigenvalues()[2] * eigen_solver2.eigenvalues()[0] &&
+                eigen_solver2.eigenvalues()[0] < surf_thres * eigen_solver2.eigenvalues()[1]) {
                     Eigen::Vector3d unitDirection1 = eigen_solver1.eigenvectors().col(0);
                     Eigen::Vector3d unitDirection2 = eigen_solver2.eigenvectors().col(0);
-                    if((unitDirection1.cross(unitDirection2)).norm() >= 0.2 || (center1 - center2).dot(unitDirection1) > 0.2) // || (center1 - center2).dot(unitDirection1) > 0.2
+                    Eigen::Vector3d unitDirection = eigen_solver_edge.eigenvectors().col(2);
+
+//                    double flag1 = (unitDirection1.cross(unitDirection2)).norm();
+//                    double flag2 = abs((center1 - center2).dot(unitDirection1));
+//                    double flag3 = (center1 - center2).norm();
+//                    if(flag1 >= 0.2 ||
+//                    (flag3 > 0.1 && flag2 > 0.1 * flag3)) // || (center1 - center2).dot(unitDirection1) > 0.2 // || (center1 - center2).dot(unitDirection) < 0.2 * (center1 - center2).norm()
+                    double flag1 = abs(unitDirection1.dot(unitDirection));
+                    double flag2 = abs(unitDirection2.dot(unitDirection));
+                    double flag3 = unitDirection2.cross(unitDirection1).norm();
+                    double flag4 = abs(unitDirection1.dot(center1) / center1.norm());
+                    double flag5 = abs(unitDirection2.dot(center2) / center2.norm());
+                    if(flag1 < 0.2 && flag2 < 0.2 && flag3 > 0.1 && (flag4 > 0.05 || flag5 > 0.05))
                     {
-                        Eigen::Vector3d unitDirection = eigen_solver_edge.eigenvectors().col(2);
                         for(int j = 0; j < idsx_edge.size(); j++) {
                             if(mat[idsx_edge[j]][idsy_edge[j]].intensity <= 0 && mat[idsx_edge[j]][idsy_edge[j]].curvature <= 0)
                                 continue;
@@ -413,6 +484,8 @@ public:
                         {
                             num_right += idsx_edge.size();
                         }
+                        surf_features->points.insert(surf_features->points.end(),surf_temp1.begin(),surf_temp1.end());
+                        surf_features->points.insert(surf_features->points.end(),surf_temp2.begin(),surf_temp2.end());
                     }
                 }
 
@@ -479,11 +552,18 @@ public:
 //        }
 
         std_msgs::Float64 yaw_angle;
-        yaw_angle.data = std::max(angle_min, 0.98 * fb_angular + (view_cmd) * 0.3 - cmd_angular * (0.1));
+        yaw_angle.data = std::max(angle_min, 0.98 * fb_angular + (view_cmd) * 0.6 - cmd_angular * (0.5));
         yaw_angle.data = std::min(angle_max, yaw_angle.data);
         pub_view.publish(yaw_angle);
         last_view_cmd = yaw_angle.data;
         last_cmd = curr_cmd;
+
+        sensor_msgs::PointCloud2 surf_features_msg;
+        pcl::toROSMsg(*surf_features, surf_features_msg);
+        surf_features_msg.header.stamp = cloud_header.stamp;
+        surf_features_msg.header.frame_id = cloud_header.frame_id;
+        if (pub_surf.getNumSubscribers() != 0)
+            pub_surf.publish(surf_features_msg);
 
         sensor_msgs::PointCloud2 edge_features_msg;
         pcl::toROSMsg(*edge_features, edge_features_msg);
